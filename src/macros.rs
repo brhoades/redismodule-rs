@@ -23,7 +23,7 @@ macro_rules! redis_command {
 
             // If chosen, replicate all commands to any replicas verbatim.
             // https://redis.io/topics/modules-api-ref#coderedismodulereplicatecode
-            if $replicateverbatim && unsafe { redis_module::raw::RedisModule_ReplicateVerbatim.unwrap()(ctx) }
+            if unsafe { redis_module::raw::RedisModule_ReplicateVerbatim.unwrap()(ctx) }
                 == redis_module::raw::Status::Err as c_int
             {
                 return redis_module::raw::Status::Err as c_int;

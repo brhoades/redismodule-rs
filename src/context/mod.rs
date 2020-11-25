@@ -105,6 +105,20 @@ impl Context {
         result
     }
 
+    pub fn replicate(&self, command: &str, args: &[&str]) -> RedisResult {
+        let call_result = self.call(command, args);
+        if call_result.is_err() {
+            return call_result;
+        }
+
+        let replicate_result = raw::replicate(self.ctx, command, args);
+        if replicate_result == raw::Status::Err {
+            return RedisResult::Err(RedisError::Str("replicate call failed"));
+        }
+
+        call_result
+    }
+
     fn parse_call_reply(reply: *mut raw::RedisModuleCallReply) -> RedisResult {
         match raw::call_reply_type(reply) {
             raw::ReplyType::Error => Err(RedisError::String(raw::call_reply_string(reply))),
