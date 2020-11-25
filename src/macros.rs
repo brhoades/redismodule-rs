@@ -6,10 +6,7 @@ macro_rules! redis_command {
      $command_flags:expr,
      $firstkey:expr,
      $lastkey:expr,
-     $keystep:expr,
-     $replicateverbatim:expr
-     $(,)*
-    ) => {{
+     $keystep:expr) => {{
         let name = CString::new($command_name).unwrap();
         let flags = CString::new($command_flags).unwrap();
 
@@ -20,14 +17,6 @@ macro_rules! redis_command {
             argc: c_int,
         ) -> c_int {
             let context = $crate::Context::new(ctx);
-
-            // If chosen, replicate all commands to any replicas verbatim.
-            // https://redis.io/topics/modules-api-ref#coderedismodulereplicatecode
-            if unsafe { redis_module::raw::RedisModule_ReplicateVerbatim.unwrap()(ctx) }
-                == redis_module::raw::Status::Err as c_int
-            {
-                return redis_module::raw::Status::Err as c_int;
-            }
 
             let args_decoded: Result<Vec<_>, $crate::RedisError> =
                 unsafe { slice::from_raw_parts(argv, argc as usize) }
@@ -87,47 +76,6 @@ macro_rules! redis_module {
               ]),* $(,)*
         ] $(,)*
     ) => {
-        redis_module!(
-            name: $module_name,
-            version: $module_version,
-            data_types: [
-                $($data_type),*
-            ],
-            init: $init,
-            deinit: $deinit_func,
-            commands: [
-                $([
-                    $name,
-                    $command,
-                    $flags,
-                    $firstkey,
-                    $lastkey,
-                    $keystep,
-                    false
-                ],)*
-            ]
-        )
-    };
-    (
-        name: $module_name:expr,
-        version: $module_version:expr,
-        data_types: [
-            $($data_type:ident),* $(,)*
-        ],
-        $(init: $init_func:ident,)* $(,)*
-        $(deinit: $deinit_func:ident,)* $(,)*
-        commands: [
-            $([
-                $name:expr,
-                $command:expr,
-                $flags:expr,
-                $firstkey:expr,
-                $lastkey:expr,
-                $keystep:expr,
-                $replicate:expr
-              ]),* $(,)*
-        ] $(,)*
-    ) => {
         #[no_mangle]
         #[allow(non_snake_case)]
         pub extern "C" fn RedisModule_OnLoad(
@@ -176,7 +124,7 @@ macro_rules! redis_module {
             )*
 
             $(
-                redis_command!(ctx, $name, $command, $flags, $firstkey, $lastkey, $keystep, $replicate);
+                redis_command!(ctx, $name, $command, $flags, $firstkey, $lastkey, $keystep);
             )*
 
             raw::Status::Ok as c_int
@@ -195,5 +143,5 @@ macro_rules! redis_module {
 
             $crate::raw::Status::Ok as std::os::raw::c_int
         }
-    };
+    }
 }
