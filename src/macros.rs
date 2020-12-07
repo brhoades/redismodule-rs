@@ -18,9 +18,11 @@ macro_rules! redis_command {
         ) -> c_int {
             let context = $crate::Context::new(ctx);
 
-            let args_decoded: Result<Vec<_>, $crate::RedisError> =
-                unsafe { slice::from_raw_parts(argv, argc as usize) }
-                    .into_iter()
+            // catch any panics to avoid crashing redis
+            let response = std::panic::catch_unwind(|| {
+                let args_decoded: Result<Vec<_>, $crate::RedisError> =
+                    unsafe { slice::from_raw_parts(argv, argc as usize) }
+                .into_iter()
                     .map(|&arg| {
                         $crate::RedisString::from_ptr(arg)
                             .map(|v| v.to_owned())
@@ -30,9 +32,20 @@ macro_rules! redis_command {
                     })
                     .collect();
 
-            let response = args_decoded
-                .map(|args| $command_handler(&context, args))
-                .unwrap_or_else(|e| Err(e));
+                args_decoded
+                    .map(|args| $command_handler(&context, args))
+                    .unwrap_or_else(|e| Err(e))
+            });
+
+            let response = match response {
+                Ok(response) => response,
+                Err(e) => Err($crate::RedisError::String(
+                    format!(
+                        "panic in redis command handler for $command_name: {:?}",
+                        e,
+                    )
+                )),
+            };
 
             context.reply(response) as c_int
         }
