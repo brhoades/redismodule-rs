@@ -22,15 +22,15 @@ macro_rules! redis_command {
             let response = std::panic::catch_unwind(|| {
                 let args_decoded: Result<Vec<_>, $crate::RedisError> =
                     unsafe { slice::from_raw_parts(argv, argc as usize) }
-                .into_iter()
-                    .map(|&arg| {
-                        $crate::RedisString::from_ptr(arg)
-                            .map(|v| v.to_owned())
-                            .map_err(|_| {
-                                $crate::RedisError::Str("UTF8 encoding error in handler args")
-                            })
-                    })
-                    .collect();
+                        .into_iter()
+                        .map(|&arg| {
+                            $crate::RedisString::from_ptr(arg)
+                                .map(|v| v.to_owned())
+                                .map_err(|_| {
+                                    $crate::RedisError::Str("UTF8 encoding error in handler args")
+                                })
+                        })
+                        .collect();
 
                 args_decoded
                     .map(|args| $command_handler(&context, args))
@@ -39,12 +39,10 @@ macro_rules! redis_command {
 
             let response = match response {
                 Ok(response) => response,
-                Err(e) => Err($crate::RedisError::String(
-                    format!(
-                        "panic in redis command handler for $command_name: {:?}",
-                        e,
-                    )
-                )),
+                Err(_) => Err($crate::RedisError::String(format!(
+                    "caught panic in redis command handler for {}",
+                    $command_name,
+                ))),
             };
 
             context.reply(response) as c_int
@@ -124,23 +122,31 @@ macro_rules! redis_module {
                 raw::REDISMODULE_APIVER_1 as c_int,
             ) } == raw::Status::Err as c_int { return raw::Status::Err as c_int; }
 
-            $(
+            // catch any panics to avoid crashing redis
+            let res = std::panic::catch_unwind(|| {
+              $(
                 if $init_func(ctx) == raw::Status::Err as c_int {
-                    return raw::Status::Err as c_int;
+                  return raw::Status::Err as c_int;
                 }
-            )*
+              )*
 
-            $(
-                if (&$data_type).create_data_type(ctx).is_err() {
-                    return raw::Status::Err as c_int;
-                }
-            )*
+              $(
+                 if (&$data_type).create_data_type(ctx).is_err() {
+                   return raw::Status::Err as c_int;
+                 }
+               )*
 
-            $(
-                redis_command!(ctx, $name, $command, $flags, $firstkey, $lastkey, $keystep);
-            )*
+               $(
+                   redis_command!(ctx, $name, $command, $flags, $firstkey, $lastkey, $keystep);
+               )*
 
-            raw::Status::Ok as c_int
+               raw::Status::Ok as c_int
+            });
+
+            match res {
+                Ok(res) => res,
+                Err(_) => raw::Status::Err as c_int,
+            }
         }
 
         #[no_mangle]
@@ -148,13 +154,18 @@ macro_rules! redis_module {
         pub extern "C" fn RedisModule_OnUnload(
             ctx: *mut $crate::raw::RedisModuleCtx
         ) -> std::os::raw::c_int {
-            $(
-                if $deinit_func(ctx) == raw::Status::Err as c_int {
-                    return $crate::raw::Status::Err as c_int;
-                }
-            )*
+            let res = std::panic::catch_unwind(|| {
+              $(
+                  if $deinit_func(ctx) == $crate::raw::Status::Err as c_int {
+                      return $crate::raw::Status::Err as c_int;
+                  }
+              )*
+            });
 
-            $crate::raw::Status::Ok as std::os::raw::c_int
+            match res {
+                Ok(_) => $crate::raw::Status::Ok as c_int,
+                Err(_) => $crate::raw::Status::Err as c_int,
+            }
         }
     }
 }
