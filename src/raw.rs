@@ -2,8 +2,6 @@
 // point.
 #![allow(dead_code)]
 
-use std::os::raw::{c_char, c_double, c_int, c_long, c_longlong};
-
 extern crate enum_primitive_derive;
 extern crate libc;
 extern crate num_traits;
@@ -13,6 +11,7 @@ use enum_primitive_derive::Primitive;
 use libc::size_t;
 use num_traits::FromPrimitive;
 use std::ffi::CString;
+use std::os::raw::{c_char, c_double, c_int, c_long, c_longlong};
 use std::ptr;
 use std::slice;
 
@@ -84,6 +83,22 @@ impl From<Status> for Result<(), &str> {
             Status::Ok => Ok(()),
             Status::Err => Err("Generic error"),
         }
+    }
+}
+
+#[cfg(feature = "experimental-api")]
+bitflags! {
+    pub struct NotifyEvent : c_int {
+        const GENERIC = REDISMODULE_NOTIFY_GENERIC;
+        const STRING = REDISMODULE_NOTIFY_STRING;
+        const LIST = REDISMODULE_NOTIFY_LIST;
+        const SET = REDISMODULE_NOTIFY_SET;
+        const HASH = REDISMODULE_NOTIFY_HASH;
+        const ZSET = REDISMODULE_NOTIFY_ZSET;
+        const EXPIRED = REDISMODULE_NOTIFY_EXPIRED;
+        const EVICTED = REDISMODULE_NOTIFY_EVICTED;
+        const STREAM = REDISMODULE_NOTIFY_STREAM;
+        const ALL = REDISMODULE_NOTIFY_ALL;
     }
 }
 
@@ -319,11 +334,13 @@ where
 }
 
 pub fn hash_set(key: *mut RedisModuleKey, field: &str, value: *mut RedisModuleString) -> Status {
+    let field = CString::new(field).unwrap();
+
     unsafe {
         RedisModule_HashSet.unwrap()(
             key,
             REDISMODULE_HASH_CFIELDS as i32,
-            CString::new(field).unwrap().as_ptr(),
+            field.as_ptr(),
             value,
             ptr::null::<c_char>(),
         )
